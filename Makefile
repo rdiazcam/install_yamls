@@ -218,6 +218,9 @@ NEUTRON_KUTTL_CONF      ?= ${OPERATOR_BASE_DIR}/neutron-operator/kuttl-test.yaml
 NEUTRON_KUTTL_DIR       ?= ${OPERATOR_BASE_DIR}/neutron-operator/test/kuttl/tests
 NEUTRON_KUTTL_NAMESPACE ?= neutron-kuttl-tests
 
+# Controlplane Patch File Configuration
+OPENSTACK_CTLPLANE_PATCH_FILE  ?=
+
 # BGP
 NETWORK_BGP           ?= false
 BGP_OVN_ROUTING       ?= false
@@ -408,7 +411,7 @@ DATAPLANE_KUTTL_CONF                             ?= ${OPERATOR_BASE_DIR}/datapla
 DATAPLANE_KUTTL_DIR                              ?= ${OPERATOR_BASE_DIR}/dataplane-operator/tests/kuttl/tests
 DATAPLANE_KUTTL_NAMESPACE                        ?= dataplane-kuttl-tests
 BM_CTLPLANE_INTERFACE                            ?= enp1s0
-BM_ROOT_PASSWORD_SECRET                          ?=
+BM_ROOT_PASSWORD                                 ?=
 GENERATE_SSH_KEYS				 ?= true
 DATAPLANE_EXTRA_NOVA_CONFIG_FILE                 ?= /dev/null
 
@@ -704,6 +707,7 @@ openstack_cleanup: operator_namespace## deletes the operator, but does not clean
 .PHONY: openstack_deploy_prep
 openstack_deploy_prep: export KIND=OpenStackControlPlane
 openstack_deploy_prep: export OVN_NICMAPPING=${OVNCONTROLLER_NMAP}
+openstack_deploy_prep: export CTLPLANE_PATCH_FILE=${DEPLOY_DIR}/ctlplane-patch-file.patch
 openstack_deploy_prep: export BRIDGE_NAME=${NNCP_BRIDGE}
 openstack_deploy_prep: export CTLPLANE_IP_ADDRESS_PREFIX=${NNCP_CTLPLANE_IPV6_ADDRESS_PREFIX}
 ifeq ($(NETWORK_ISOLATION_IPV4), true)
@@ -723,16 +727,23 @@ openstack_deploy_prep: openstack_deploy_cleanup ## prepares the CR to install th
 	mkdir -p ${OPERATOR_BASE_DIR} ${OPERATOR_DIR} ${DEPLOY_DIR}
 	bash -c "CHECKOUT_FROM_OPENSTACK_REF=false scripts/clone-operator-repo.sh"
 	cp ${OPENSTACK_CR} ${DEPLOY_DIR}
+ifneq (${OPENSTACK_CTLPLANE_PATCH_FILE},)
+	cp ${OPENSTACK_CTLPLANE_PATCH_FILE} ${CTLPLANE_PATCH_FILE}
+endif
 ifeq ($(NETWORK_ISOLATION_USE_DEFAULT_NETWORK), false)
 	sed -i 's/192.168.122/${NNCP_CTLPLANE_IP_ADDRESS_PREFIX}/g' ${DEPLOY_DIR}/$(notdir ${OPENSTACK_CR})
 endif
 	bash scripts/gen-service-kustomize.sh
 
 .PHONY: openstack_deploy
+openstack_deploy: export CTLPLANE_PATCH_FILE=${DEPLOY_DIR}/ctlplane-patch-file.patch
 openstack_deploy: input openstack_deploy_prep netconfig_deploy ## installs the service instance using kustomize. Runs prep step in advance. Set OPENSTACK_REPO and OPENSTACK_BRANCH to deploy from a custom repo.
 	$(eval $(call vars,$@,openstack))
 	make wait
 	bash scripts/operator-deploy-resources.sh
+ifneq (${OPENSTACK_CTLPLANE_PATCH_FILE},)
+	bash scripts/gen-ctlplane-patches.sh
+endif
 
 .PHONY: openstack_wait_deploy
 openstack_wait_deploy: openstack_deploy ## waits for ctlplane readiness. Runs prep step in advance. Set OPENSTACK_REPO and OPENSTACK_BRANCH to deploy from a custom repo.
@@ -750,6 +761,9 @@ edpm_deploy_generate_keys:
 	$(eval $(call vars,$@,dataplane))
 	devsetup/scripts/gen-ansibleee-ssh-key.sh
 	bash scripts/gen-edpm-nova-migration-ssh-key.sh
+ifneq (${EDPM_ROOT_PASSWORD},)
+	bash scripts/gen-edpm-bmset-password-secret.sh
+endif
 
 .PHONY: edpm_patch_ansible_runner_image
 edpm_patch_ansible_runner_image:
@@ -828,11 +842,13 @@ edpm_deploy_baremetal_prep: export EDPM_NTP_SERVER=${DATAPLANE_NTP_SERVER}
 edpm_deploy_baremetal_prep: export EDPM_REGISTRY_URL=${DATAPLANE_REGISTRY_URL}
 edpm_deploy_baremetal_prep: export EDPM_CONTAINER_TAG=${DATAPLANE_CONTAINER_TAG}
 edpm_deploy_baremetal_prep: export EDPM_CONTAINER_PREFIX=${DATAPLANE_CONTAINER_PREFIX}
-edpm_deploy_baremetal_prep: export EDPM_ROOT_PASSWORD_SECRET=${BM_ROOT_PASSWORD_SECRET}
 edpm_deploy_baremetal_prep: export EDPM_GROWVOLS_ARGS=${DATAPLANE_GROWVOLS_ARGS}
 edpm_deploy_baremetal_prep: export REPO=${DATAPLANE_REPO}
 edpm_deploy_baremetal_prep: export BRANCH=${DATAPLANE_BRANCH}
 edpm_deploy_baremetal_prep: export HASH=${DATAPLANE_COMMIT_HASH}
+edpm_deploy_baremetal_prep: export EDPM_ROOT_PASSWORD=${BM_ROOT_PASSWORD}
+edpm_deploy_baremetal_prep: export EDPM_EXTRA_NOVA_CONFIG_FILE=${DEPLOY_DIR}/25-nova-extra.conf
+edpm_deploy_baremetal_prep: export EDPM_SERVER_ROLE=compute
 edpm_deploy_baremetal_prep: edpm_deploy_cleanup ## prepares the CR to install the data plane
 	$(eval $(call vars,$@,dataplane))
 	mkdir -p ${OPERATOR_BASE_DIR} ${OPERATOR_DIR} ${DEPLOY_DIR}
@@ -840,6 +856,7 @@ edpm_deploy_baremetal_prep: edpm_deploy_cleanup ## prepares the CR to install th
 	cp devsetup/edpm/services/* ${OPERATOR_BASE_DIR}/${OPERATOR_NAME}-operator/config/services
 	cp ${DATAPLANE_NODESET_BAREMETAL_CR} ${DEPLOY_DIR}
 	cp ${DATAPLANE_DEPLOYMENT_BAREMETAL_CR} ${DEPLOY_DIR}
+	cp ${DATAPLANE_EXTRA_NOVA_CONFIG_FILE} ${EDPM_EXTRA_NOVA_CONFIG_FILE}
 	bash scripts/gen-edpm-baremetal-kustomize.sh
 ifeq ($(GENERATE_SSH_KEYS), true)
 	make edpm_deploy_generate_keys

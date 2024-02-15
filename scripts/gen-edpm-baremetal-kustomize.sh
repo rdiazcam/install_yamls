@@ -87,12 +87,12 @@ cat <<EOF >>kustomization.yaml
       value: '${EDPM_GROWVOLS_ARGS}'
 EOF
 fi
-if [ "$EDPM_ROOT_PASSWORD_SECRET" != "" ]; then
+if [ "$EDPM_ROOT_PASSWORD" != "" ]; then
 cat <<EOF >>kustomization.yaml
     - op: add
       path: /spec/baremetalSetTemplate/passwordSecret
       value:
-        name: ${EDPM_ROOT_PASSWORD_SECRET}
+        name: baremetalset-password-secret
         namespace: ${NAMESPACE}
 EOF
 fi
@@ -128,6 +128,47 @@ cat <<EOF >>kustomization.yaml
       value: edpm-compute-${INDEX}
 EOF
     done
+fi
+
+if [ "${EDPM_SERVER_ROLE}" == "compute" ]; then
+# Create a nova-custom service with a reference to nova-extra-config CM
+cat <<EOF >>kustomization.yaml
+- target:
+    kind: OpenStackDataPlaneService
+    name: nova
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: nova-custom
+    - op: add
+      path: /spec/configMaps
+      value:
+        - nova-extra-config
+EOF
+
+# Create the nova-extra-config CM based on the provided config file
+cat <<EOF >>kustomization.yaml
+configMapGenerator:
+- name: nova-extra-config
+  files:
+    - 25-nova-extra.conf=${EDPM_EXTRA_NOVA_CONFIG_FILE}
+  options:
+    disableNameSuffixHash: true
+EOF
+
+# Replace the nova service in the nodeset with the new nova-custom service
+#
+# NOTE(gibi): This is hard to do with kustomize as it only allows
+# list item replacemnet by index and not by value, but we cannot
+# be sure that the index is not changing in the future by
+# adding more services or splitting existing services.
+# The kustozmization would be something like:
+#     - op: replace
+#      path: /spec/services/11
+#      value: nova-custom
+#
+# So we do a replace by value with yq (assuming golang implementation of yq)
+yq -i '(.spec.services[] | select(. == "nova")) |= "nova-custom"' *openstackdataplanenodeset*.yaml
 fi
 
 kustomization_add_resources
