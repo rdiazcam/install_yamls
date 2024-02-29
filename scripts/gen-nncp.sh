@@ -143,10 +143,9 @@ EOF_CAT
 EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
-      - destination: ${CTLPLANE_IP_ADDRESS_PREFIX}.0/24
+      - destination: 0.0.0.0/0
         next-hop-address: ${GATEWAY}
         next-hop-interface: ${BRIDGE_NAME}
-        metric: 425
 EOF_CAT
     fi
     if [ -n "$IPV6_ENABLED" ]; then
@@ -171,7 +170,6 @@ EOF_CAT
       vlan:
         base-iface: ${INTERFACE}
         id: ${VLAN_START}
-        reorder-headers: true
 EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
@@ -218,7 +216,6 @@ EOF_CAT
       vlan:
         base-iface: ${INTERFACE}
         id: ${storage_vlan_id}
-        reorder-headers: true
 EOF_CAT
 
     if [ -n "${STORAGE_MACVLAN}" ]; then
@@ -280,7 +277,6 @@ EOF_CAT
       vlan:
         base-iface: ${INTERFACE}
         id: $((${VLAN_START}+$((${VLAN_STEP}*2))))
-        reorder-headers: true
 EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
@@ -325,7 +321,6 @@ EOF_CAT
       vlan:
         base-iface: ${INTERFACE}
         id: $((${VLAN_START}+$((${VLAN_STEP}*3))))
-        reorder-headers: true
 EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
@@ -370,7 +365,6 @@ EOF_CAT
       vlan:
         base-iface: ${INTERFACE}
         id: $((${VLAN_START}+$((${VLAN_STEP}*4))))
-        reorder-headers: true
 EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
@@ -424,11 +418,8 @@ EOF_CAT
     if [ -n "$IPV4_ENABLED" ]; then
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
       ipv4:
-        address:
-        - ip: ${CTLPLANE_IP_ADDRESS_PREFIX}.${CTLPLANE_IP_ADDRESS_SUFFIX}
-          prefix-length: 24
         enabled: true
-        dhcp: false
+        dhcp: true
 EOF_CAT
     else
         cat >> ${DEPLOY_DIR}/${WORKER}_nncp.yaml <<EOF_CAT
